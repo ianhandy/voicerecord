@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VoiceRecord — Voice Memo with Live Transcription</title>
+<style>
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+  :root{
+    --bg:#1A0D00;--bg2:#241200;--gold:#DDC165;--gold-light:#FFE9A3;
+    --orange:#E5591C;--text:#e8d5b7;--dim:#8a7a65;--radius:12px;
+  }
+  @font-face{font-family:'Inter';src:local('Inter'),local('system-ui')}
+  body{
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    background:var(--bg);color:var(--text);min-height:100vh;
+    display:flex;flex-direction:column;overflow-x:hidden;
+  }
+
+  /* Header */
+  header{
+    padding:1.5rem 2rem;display:flex;align-items:center;gap:1rem;
+    border-bottom:1px solid rgba(221,193,101,0.1);
+    background:linear-gradient(180deg,rgba(36,18,0,0.8),transparent);
+  }
+  header h1{font-size:1.4rem;font-weight:700;color:var(--gold);letter-spacing:-0.02em}
+  header span{font-size:0.8rem;color:var(--dim);margin-left:auto}
+
+  /* Main layout */
+  main{
+    flex:1;display:flex;flex-direction:column;align-items:center;
+    padding:2rem 1rem;gap:2rem;max-width:800px;margin:0 auto;width:100%;
+  }
+
+  /* Recording controls */
+  .controls{
+    display:flex;flex-direction:column;align-items:center;gap:1.5rem;
+    width:100%;
+  }
+
+  /* Big record button */
+  .record-btn{
+    width:120px;height:120px;border-radius:50%;border:none;cursor:pointer;
+    background:radial-gradient(circle at 40% 35%,#ff7a3a,var(--orange));
+    box-shadow:0 0 0 0 rgba(229,89,28,0.4);
+    transition:all 0.3s ease;position:relative;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .record-btn:hover{transform:scale(1.05);box-shadow:0 0 30px rgba(229,89,28,0.3)}
+  .record-btn.recording{
+    animation:pulse-ring 1.5s ease-out infinite;
+    background:radial-gradient(circle at 40% 35%,#ff4444,#cc2200);
+  }
+  .record-btn .icon{
+    width:40px;height:40px;background:#fff;border-radius:50%;
+    transition:border-radius 0.2s ease;
+  }
+  .record-btn.recording .icon{border-radius:6px;width:32px;height:32px}
+
+  @keyframes pulse-ring{
+    0%{box-shadow:0 0 0 0 rgba(229,89,28,0.5)}
+    70%{box-shadow:0 0 0 25px rgba(229,89,28,0)}
+    100%{box-shadow:0 0 0 0 rgba(229,89,28,0)}
+  }
+
+  .status{font-size:0.95rem;color:var(--dim);min-height:1.4em}
+  .status.active{color:var(--orange)}
+  .timer{font-size:2.5rem;font-weight:200;color:var(--gold-light);font-variant-numeric:tabular-nums;letter-spacing:0.05em}
+
+  /* Waveform visualizer */
+  .waveform-container{
+    width:100%;height:80px;border-radius:var(--radius);overflow:hidden;
+    background:var(--bg2);border:1px solid rgba(221,193,101,0.08);
+  }
+  .waveform-container canvas{width:100%;height:100%;display:block}
+
+  /* Live transcript */
+  .transcript-box{
+    width:100%;min-height:120px;max-height:250px;overflow-y:auto;
+    background:var(--bg2);border:1px solid rgba(221,193,101,0.1);
+    border-radius:var(--radius);padding:1.2rem 1.5rem;
+    font-size:0.95rem;line-height:1.7;color:var(--text);
+  }
+  .transcript-box .interim{color:var(--dim);font-style:italic}
+  .transcript-box:empty::before{
+    content:'Transcript appears here as you speak...';
+    color:rgba(138,122,101,0.5);
+  }
+
+  /* Recordings list */
+  .recordings{width:100%;display:flex;flex-direction:column;gap:0.75rem}
+  .recordings h2{
+    font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;
+    color:var(--dim);margin-bottom:0.25rem;
+  }
+
+  .memo{
+    background:var(--bg2);border:1px solid rgba(221,193,101,0.08);
+    border-radius:var(--radius);padding:1.2rem 1.5rem;
+    transition:border-color 0.2s;
+  }
+  .memo:hover{border-color:rgba(221,193,101,0.2)}
+  .memo-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem}
+  .memo-time{font-size:0.8rem;color:var(--dim)}
+  .memo-duration{
+    font-size:0.75rem;color:var(--gold);background:rgba(221,193,101,0.1);
+    padding:0.2rem 0.6rem;border-radius:20px;
+  }
+  .memo-transcript{font-size:0.9rem;line-height:1.6;color:var(--text);margin-bottom:0.75rem}
+  .memo-actions{display:flex;gap:0.5rem;flex-wrap:wrap}
+  .memo-actions button{
+    background:none;border:1px solid rgba(221,193,101,0.15);color:var(--dim);
+    padding:0.35rem 0.75rem;border-radius:6px;font-size:0.78rem;cursor:pointer;
+    transition:all 0.2s;
+  }
+  .memo-actions button:hover{border-color:var(--gold);color:var(--gold)}
+  .memo-actions button.delete:hover{border-color:var(--orange);color:var(--orange)}
+
+  /* Audio player */
+  .memo audio{width:100%;height:36px;margin-bottom:0.5rem;filter:sepia(0.3)brightness(0.8)}
+
+  /* Empty state */
+  .empty-state{
+    text-align:center;padding:3rem 1rem;color:var(--dim);
+  }
+  .empty-state .big-icon{font-size:3rem;margin-bottom:1rem;opacity:0.3}
+  .empty-state p{font-size:0.9rem}
+
+  /* Toast */
+  .toast{
+    position:fixed;bottom:2rem;left:50%;transform:translateX(-50%) translateY(100px);
+    background:var(--gold);color:var(--bg);padding:0.6rem 1.2rem;border-radius:8px;
+    font-size:0.85rem;font-weight:600;opacity:0;transition:all 0.3s ease;z-index:100;
+  }
+  .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+
+  /* Unsupported banner */
+  .unsupported{
+    background:rgba(229,89,28,0.15);border:1px solid var(--orange);
+    border-radius:var(--radius);padding:1rem 1.5rem;text-align:center;
+    color:var(--orange);font-size:0.9rem;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar{width:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:rgba(221,193,101,0.2);border-radius:3px}
+
+  /* Mobile */
+  @media(max-width:600px){
+    header{padding:1rem 1.2rem}
+    main{padding:1.5rem 1rem}
+    .record-btn{width:100px;height:100px}
+    .timer{font-size:2rem}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>VoiceRecord</h1>
+  <span>Browser Voice Memo</span>
+</header>
+
+<main>
+  <div class="controls">
+    <div class="timer" id="timer">00:00</div>
+    <button class="record-btn" id="recordBtn" title="Press to record">
+      <div class="icon"></div>
+    </button>
+    <div class="status" id="status">Tap to start recording</div>
+  </div>
+
+  <div class="waveform-container">
+    <canvas id="waveform"></canvas>
+  </div>
+
+  <div class="transcript-box" id="liveTranscript"></div>
+
+  <div class="recordings" id="recordings">
+    <h2>Saved Memos</h2>
+    <div class="empty-state" id="emptyState">
+      <div class="big-icon">&#127908;</div>
+      <p>No recordings yet. Tap the button to create your first voice memo.</p>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  // Feature detection
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const hasMediaRecorder = typeof MediaRecorder !== 'undefined';
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    document.querySelector('.controls').innerHTML =
+      '<div class="unsupported">Your browser does not support microphone access. Please use Chrome or Edge.</div>';
+    return;
+  }
+
+  // State
+  let isRecording = false;
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let audioStream = null;
+  let recognition = null;
+  let finalTranscript = '';
+  let interimTranscript = '';
+  let startTime = 0;
+  let timerInterval = null;
+  let analyser = null;
+  let animFrame = null;
+  let memos = JSON.parse(localStorage.getItem('voicerecord_memos') || '[]');
+
+  // DOM
+  const btn = document.getElementById('recordBtn');
+  const statusEl = document.getElementById('status');
+  const timerEl = document.getElementById('timer');
+  const liveTranscriptEl = document.getElementById('liveTranscript');
+  const recordingsEl = document.getElementById('recordings');
+  const emptyState = document.getElementById('emptyState');
+  const canvas = document.getElementById('waveform');
+  const ctx = canvas.getContext('2d');
+
+  // Init
+  renderMemos();
+
+  btn.addEventListener('click', toggleRecording);
+
+  // Keyboard shortcut
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && e.target === document.body) {
+      e.preventDefault();
+      toggleRecording();
+    }
+  });
+
+  async function toggleRecording() {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      await startRecording();
+    }
+  }
+
+  async function startRecording() {
+    try {
+      audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      showToast('Microphone access denied');
+      return;
+    }
+
+    isRecording = true;
+    btn.classList.add('recording');
+    statusEl.textContent = 'Recording...';
+    statusEl.classList.add('active');
+    finalTranscript = '';
+    interimTranscript = '';
+    liveTranscriptEl.innerHTML = '';
+    audioChunks = [];
+
+    // MediaRecorder
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : 'audio/mp4';
+
+    mediaRecorder = new MediaRecorder(audioStream, { mimeType });
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.start(100);
+
+    // Timer
+    startTime = Date.now();
+    timerEl.textContent = '00:00';
+    timerInterval = setInterval(updateTimer, 200);
+
+    // Waveform
+    setupWaveform(audioStream);
+
+    // Speech recognition
+    startSpeechRecognition();
+  }
+
+  function stopRecording() {
+    isRecording = false;
+    btn.classList.remove('recording');
+    statusEl.textContent = 'Tap to start recording';
+    statusEl.classList.remove('active');
+    clearInterval(timerInterval);
+
+    const duration = Math.floor((Date.now() - startTime) / 1000);
+
+    // Stop media recorder
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+      mediaRecorder.stop();
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType });
+        saveMemo(blob, duration, finalTranscript.trim());
+      };
+    }
+
+    // Stop recognition
+    if (recognition) {
+      try { recognition.stop(); } catch (e) {}
+    }
+
+    // Stop stream
+    if (audioStream) {
+      audioStream.getTracks().forEach(t => t.stop());
+      audioStream = null;
+    }
+
+    // Stop waveform
+    if (animFrame) cancelAnimationFrame(animFrame);
+    clearCanvas();
+  }
+
+  function startSpeechRecognition() {
+    if (!SpeechRecognition) {
+      statusEl.textContent = 'Recording... (no transcription in this browser)';
+      return;
+    }
+
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      interimTranscript = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += t + ' ';
+        } else {
+          interimTranscript += t;
+        }
+      }
+      liveTranscriptEl.innerHTML =
+        escapeHtml(finalTranscript) +
+        (interimTranscript ? `<span class="interim">${escapeHtml(interimTranscript)}</span>` : '');
+      liveTranscriptEl.scrollTop = liveTranscriptEl.scrollHeight;
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === 'no-speech') return; // Normal — just no speech detected
+      console.warn('Speech recognition error:', event.error);
+    };
+
+    recognition.onend = () => {
+      // Restart if still recording (recognition auto-stops after silence)
+      if (isRecording) {
+        try { recognition.start(); } catch (e) {}
+      }
+    };
+
+    try { recognition.start(); } catch (e) {}
+  }
+
+  // Waveform visualization
+  function setupWaveform(stream) {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+
+    canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+    canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+
+    drawWaveform();
+  }
+
+  function drawWaveform() {
+    if (!analyser) return;
+    animFrame = requestAnimationFrame(drawWaveform);
+
+    const bufferLength = analyser.frequencyBinCount;
+    const data = new Uint8Array(bufferLength);
+    analyser.getByteFrequencyData(data);
+
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    const barWidth = (w / bufferLength) * 1.5;
+    const gap = 2;
+    let x = 0;
+
+    for (let i = 0; i < bufferLength; i++) {
+      const v = data[i] / 255;
+      const barH = v * h * 0.85;
+
+      // Gradient from gold to orange based on intensity
+      const r = Math.round(221 + (229 - 221) * v);
+      const g = Math.round(193 - 100 * v);
+      const b = Math.round(101 - 73 * v);
+      const alpha = 0.3 + v * 0.7;
+
+      ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+
+      // Draw bar centered vertically
+      const y = (h - barH) / 2;
+      ctx.beginPath();
+      ctx.roundRect(x, y, barWidth - gap, barH, 2);
+      ctx.fill();
+
+      x += barWidth;
+    }
+  }
+
+  function clearCanvas() {
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // Draw idle line
+    ctx.strokeStyle = 'rgba(221,193,101,0.1)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, h / 2);
+    ctx.lineTo(w, h / 2);
+    ctx.stroke();
+  }
+
+  function updateTimer() {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const s = String(elapsed % 60).padStart(2, '0');
+    timerEl.textContent = `${m}:${s}`;
+  }
+
+  // Save memo
+  function saveMemo(blob, duration, transcript) {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const memo = {
+        id: Date.now(),
+        timestamp: new Date().toISOString(),
+        duration,
+        transcript: transcript || '(no transcription available)',
+        audioData: reader.result,
+        mimeType: blob.type,
+      };
+      memos.unshift(memo);
+
+      // Keep storage under ~45MB (localStorage limit)
+      while (estimateSize(memos) > 45_000_000 && memos.length > 1) {
+        memos.pop();
+      }
+
+      try {
+        localStorage.setItem('voicerecord_memos', JSON.stringify(memos));
+      } catch (e) {
+        // Storage full — remove oldest
+        memos.pop();
+        try { localStorage.setItem('voicerecord_memos', JSON.stringify(memos)); } catch (e2) {}
+        showToast('Storage nearly full — oldest memo removed');
+      }
+
+      renderMemos();
+      showToast('Memo saved');
+    };
+    reader.readAsDataURL(blob);
+  }
+
+  function estimateSize(arr) {
+    return JSON.stringify(arr).length;
+  }
+
+  // Render memos
+  function renderMemos() {
+    // Remove existing memo elements
+    recordingsEl.querySelectorAll('.memo').forEach(el => el.remove());
+
+    if (memos.length === 0) {
+      emptyState.style.display = '';
+      return;
+    }
+    emptyState.style.display = 'none';
+
+    memos.forEach((memo, i) => {
+      const el = document.createElement('div');
+      el.className = 'memo';
+      const d = new Date(memo.timestamp);
+      const timeStr = d.toLocaleString(undefined, {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+      });
+      const durStr = formatDuration(memo.duration);
+
+      el.innerHTML = `
+        <div class="memo-header">
+          <span class="memo-time">${timeStr}</span>
+          <span class="memo-duration">${durStr}</span>
+        </div>
+        <audio controls src="${memo.audioData}" preload="none"></audio>
+        <div class="memo-transcript">${escapeHtml(memo.transcript)}</div>
+        <div class="memo-actions">
+          <button class="copy" data-i="${i}">Copy text</button>
+          <button class="download" data-i="${i}">Download audio</button>
+          <button class="delete" data-i="${i}">Delete</button>
+        </div>
+      `;
+
+      el.querySelector('.copy').addEventListener('click', () => {
+        navigator.clipboard.writeText(memo.transcript).then(() => showToast('Copied to clipboard'));
+      });
+
+      el.querySelector('.download').addEventListener('click', () => {
+        const ext = memo.mimeType.includes('webm') ? 'webm' : memo.mimeType.includes('mp4') ? 'm4a' : 'ogg';
+        const a = document.createElement('a');
+        a.href = memo.audioData;
+        a.download = `voicememo-${d.toISOString().slice(0,16).replace(/:/g,'-')}.${ext}`;
+        a.click();
+      });
+
+      el.querySelector('.delete').addEventListener('click', () => {
+        if (confirm('Delete this memo?')) {
+          memos.splice(i, 1);
+          localStorage.setItem('voicerecord_memos', JSON.stringify(memos));
+          renderMemos();
+          showToast('Memo deleted');
+        }
+      });
+
+      recordingsEl.appendChild(el);
+    });
+  }
+
+  function formatDuration(sec) {
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}m ${s}s`;
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2000);
+  }
+
+  // Init canvas
+  requestAnimationFrame(() => {
+    canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+    canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+    clearCanvas();
+  });
+
+  window.addEventListener('resize', () => {
+    canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+    canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+    if (!isRecording) clearCanvas();
+  });
+})();
+</script>
+</body>
+</html>
